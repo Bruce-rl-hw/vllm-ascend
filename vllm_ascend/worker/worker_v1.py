@@ -341,3 +341,112 @@ class NPUWorker(WorkerBase):
                     torch_profiler_trace_dir))
         else:
             return None
+
+    def load_sharded_state(self, path: str, pattern: Optional[str] = None):
+        """Load sharded weights from local disk into the running model on NPU.
+
+        Expects safetensors shards named like model-rank-{rank}-part-{part}.safetensors
+        residing under `path`. Optionally override the filename `pattern`.
+
+        This adapts the GPU implementation for NPU by using NPU-specific synchronization
+        and memory management.
+
+        Returns a small dict indicating success or an error for this rank.
+        """
+        try:
+            logger.debug("Starting load_sharded_state for NPU rank %d with path=%s, pattern=%s", 
+                        self.rank, path, pattern)
+            
+            from vllm.worker._weight_update import stream_apply_sharded_state
+            logger.debug("Imported stream_apply_sharded_state successfully")
+            
+            # Check model runner availability
+            if hasattr(self, "model_runner"):
+                logger.debug("Found model_runner")
+                if hasattr(self.model_runner, "model"):
+                    logger.debug("Found model_runner.model")
+                else:
+                    logger.warning("model_runner has no model attribute")
+            else:
+                logger.warning("No model_runner found")
+            
+            # Load new weights
+            logger.debug("Calling stream_apply_sharded_state")
+            num_updated = stream_apply_sharded_state(self.model_runner.model, path, pattern)
+            logger.debug(f"Successfully loaded {num_updated} parameters for NPU rank {self.rank}")
+            logger.debug("Weight loading completed, proceeding with post-load tasks")
+            
+            # Ensure all weight updates are complete before proceeding (NPU version)
+            logger.debug("Performing NPU synchronization after weight loading")
+            torch.npu.synchronize()
+            logger.debug("NPU synchronization completed")
+            
+            # Clear KV cache after weight update (NPU specific)
+            if hasattr(self.model_runner, "kv_caches"):
+                logger.debug("Clearing KV caches after weight update")
+                for i, cache in enumerate(self.model_runner.kv_caches):
+                    if torch.is_tensor(cache):
+                        cache.zero_()
+                        logger.debug(f"Cleared KV cache {i}")
+            
+            # NPU memory cleanup
+            torch.npu.empty_cache()
+            logger.debug("NPU memory cache cleared")
+            
+            logger.debug(f"NPU worker rank {self.rank} successfully loaded weights")
+            return {"ok": True, "rank": self.rank, "num_updated": num_updated}
+            
+        except Exception as e:
+            logger.exception(f"NPU worker rank {self.rank} failed to load weights from {path}")
+            return {"ok": False, "rank": self.rank, "error": str(e)}
+
+    def validate_sharded_state(self, path: str, pattern: Optional[str] = None):
+        """Validate a prospective sharded state without mutating weights on NPU.
+
+        Returns dict with tensor_count and mismatches list.
+        """
+        logger.debug("Starting validate_sharded_state for NPU rank %d with path=%s, pattern=%s", 
+                    self.rank, path, pattern)
+        
+        try:
+            from vllm.worker._weight_update import validate_sharded_state
+            logger.debug("Imported validate_sharded_state successfully")
+            
+            # Check model runner availability
+            if hasattr(self, "model_runner"):
+                logger.debug("Found model_runner for validation")
+                if hasattr(self.model_runner, "model"):
+                    logger.debug("Found model_runner.model for validation")
+                else:
+                    logger.warning("model_runner has no model attribute for validation")
+            else:
+                logger.warning("No model_runner found for validation")
+            
+            logger.debug("Calling validate_sharded_state function")
+            tensor_count, mismatches = validate_sharded_state(self.model_runner.model, path, pattern)
+            
+            logger.debug("Validation completed: %d tensors checked, %d mismatches found", 
+                        tensor_count, len(mismatches))
+            
+            if mismatches:
+                logger.debug("Validation mismatches: %s", mismatches[:3])  # Log first 3 mismatches
+            
+            result = {
+                "ok": True,
+                "rank": self.rank,
+                "tensor_count": tensor_count,
+                "mismatches": mismatches,
+            }
+            
+            logger.debug(f"NPU worker rank {self.rank} validation result: {result}")
+            return result
+            
+        except Exception as e:
+            logger.exception(f"NPU worker rank {self.rank} failed to validate weights from {path}")
+            return {
+                "ok": False,
+                "rank": self.rank,
+                "error": str(e),
+                "tensor_count": 0,
+                "mismatches": [{"kind": "error", "name": "*", "detail": str(e)}],
+            }
