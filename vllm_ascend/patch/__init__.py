@@ -187,3 +187,20 @@
 #       Need a PR to vllm to support all_to_all for GroupCoordinator.
 #    Future Plan:
 #       Remove this patch when vllm merged them.
+#
+# ** File: worker/patch_0_9_1/patch_weight_update.py **
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. NPU weight update support
+#    Why:
+#       vLLM's update-weights-from-disk feature uses CUDA-specific synchronization
+#       and memory management. NPU workers need NPU-compatible implementations.
+#    How：
+#       Add load_sharded_state and validate_sharded_state methods to NPU Worker
+#       with NPU-specific synchronization (torch.npu.synchronize) and memory 
+#       management (torch.npu.empty_cache).
+#    Related PR (if no, explain why):
+#       Based on vLLM's update-weights-from-disk feature in commit 4d6538ce5.
+#       This is NPU-specific adaptation of existing vLLM functionality.
+#    Future Plan:
+#       Keep this patch as NPU-specific adaptation. May need updates when
+#       vLLM's weight update API evolves.

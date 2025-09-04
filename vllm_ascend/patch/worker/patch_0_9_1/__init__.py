@@ -14,3 +14,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
+import vllm_ascend.patch.worker.patch_0_9_1.patch_weight_update  # noqa
