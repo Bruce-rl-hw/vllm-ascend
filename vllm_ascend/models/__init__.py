@@ -1,4 +1,8 @@
-from vllm import ModelRegistry
+try:
+    from vllm import ModelRegistry  # 首选：顶层导出
+except Exception:
+    # 兼容：直接从实现路径导
+    from vllm.model_executor.models import ModelRegistry
 
 import vllm_ascend.envs as envs
 

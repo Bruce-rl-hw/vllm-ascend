@@ -204,3 +204,18 @@
 #    Future Plan:
 #       Keep this patch as NPU-specific adaptation. May need updates when
 #       vLLM's weight update API evolves.
+#
+# ** File: platform/patch_0_9_1/patch_api_server.py **
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. NPU API server adaptation for weight updates
+#    Why:
+#       vLLM's API server update-weights-from-disk endpoint needs to work seamlessly
+#       with NPU workers. This provides minimal API-level compatibility layer.
+#    How：
+#       Wrap the original update_weights_from_disk function with NPU-aware logging
+#       and error handling. The actual NPU logic is handled by worker-level patches.
+#    Related PR (if no, explain why):
+#       Complements worker/patch_0_9_1/patch_weight_update.py to provide full
+#       NPU support for weight update API.
+#    Future Plan:
+#       Keep this patch as NPU-specific API compatibility layer.
